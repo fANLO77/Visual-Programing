@@ -9,5 +9,6 @@ interface Movable {
     fun move()
     fun getPosition(): Pair<Double, Double>
     fun getCurrentSpeed(): Double
-    fun getFullName(): String // Добавляем метод для имени
+    fun getFullName(): String 
+
 }

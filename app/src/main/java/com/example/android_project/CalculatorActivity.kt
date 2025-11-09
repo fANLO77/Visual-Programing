@@ -1,5 +1,6 @@
 package com.example.android_project
 
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
@@ -24,6 +25,7 @@ class CalculatorActivity : AppCompatActivity() {
     private lateinit var div: Button
     private lateinit var equal: Button
     private lateinit var clear: Button
+    private val allButtons = mutableListOf<Button>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +50,11 @@ class CalculatorActivity : AppCompatActivity() {
         div = findViewById(R.id.div) ?: throw IllegalStateException("Button div not found")
         equal = findViewById(R.id.equal) ?: throw IllegalStateException("Button equal not found")
         clear = findViewById(R.id.clear) ?: throw IllegalStateException("Button clear not found")
+
+        allButtons.addAll(listOf(
+            num0, num1, num2, num3, num4, num5, num6, num7, num8, num9,
+            add, sub, mul, div, clear, equal
+        ))
 
         num0.setOnClickListener { display.append("0") }
         num1.setOnClickListener { display.append("1") }
@@ -79,6 +86,7 @@ class CalculatorActivity : AppCompatActivity() {
             }
 
             try {
+
                 var operatorIndex = -1
                 var i = if (expression[0] == '-') 1 else 0
                 while (i < expression.length) {
@@ -111,6 +119,15 @@ class CalculatorActivity : AppCompatActivity() {
                     else -> throw IllegalArgumentException()
                 }
                 display.text = result.toString()
+
+                val randomColor = Color.rgb(
+                    (0..255).random(),
+                    (0..255).random(),
+                    (0..255).random()
+                )
+                allButtons.forEach { button ->
+                    button.backgroundTintList = android.content.res.ColorStateList.valueOf(randomColor)
+                }
             } catch (e: Exception) {
                 display.text = "Error"
             }

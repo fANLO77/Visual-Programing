@@ -26,6 +26,8 @@ class MediaPlayerActivity : AppCompatActivity() {
     private lateinit var textTotalTime: TextView
     private lateinit var trackListView: ListView
     private lateinit var audioManager: AudioManager
+    private lateinit var buttonPrev: Button
+    private lateinit var buttonNext: Button
     private val handler = Handler(Looper.getMainLooper())
     private val updateSeekBar = object : Runnable {
         override fun run() {
@@ -44,7 +46,6 @@ class MediaPlayerActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_media_player)
-
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         initViews()
         initMediaPlayer()
@@ -57,6 +58,8 @@ class MediaPlayerActivity : AppCompatActivity() {
         textCurrentTime = findViewById(R.id.currentTimeText)
         textTotalTime = findViewById(R.id.totalTimeText)
         trackListView = findViewById(R.id.trackListView)
+        buttonPrev = findViewById(R.id.prevButton)
+        buttonNext = findViewById(R.id.nextButton)
     }
     private fun initMediaPlayer() {
         mediaPlayer = MediaPlayer().apply {
@@ -69,6 +72,29 @@ class MediaPlayerActivity : AppCompatActivity() {
                 Log.d(logTag, "Трек завершён")
                 buttonPlayPause.text = "Воспроизвести"
                 seekBarProgress.progress = 0
+                if (currentTrackIndex < trackList.size - 1) {
+                    playTrack(currentTrackIndex + 1)
+                } else {
+                    Toast.makeText(this@MediaPlayerActivity, "Плейлист завершён", Toast.LENGTH_SHORT).show()
+                }
+            }
+            buttonPrev.setOnClickListener {
+                if (currentTrackIndex > 0) {
+                    playTrack(currentTrackIndex - 1)
+                    Log.d(logTag, "Переход к предыдущему: ${trackList[currentTrackIndex].name}")
+                } else {
+                    Toast.makeText(this@MediaPlayerActivity, "Это первый трек", Toast.LENGTH_SHORT).show()
+                    Log.d(logTag, "Попытка перейти до первого трека")
+                }
+            }
+            buttonNext.setOnClickListener {
+                if (currentTrackIndex < trackList.size - 1) {
+                    playTrack(currentTrackIndex + 1)
+                    Log.d(logTag, "Переход к следующему: ${trackList[currentTrackIndex].name}")
+                } else {
+                    Toast.makeText(this@MediaPlayerActivity, "Это последний трек", Toast.LENGTH_SHORT).show()
+                    Log.d(logTag, "Попытка перейти после последнего трека")
+                }
             }
         }
         seekBarProgress.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -106,7 +132,7 @@ class MediaPlayerActivity : AppCompatActivity() {
                     handler.post(updateSeekBar)
                     Log.d(logTag, "Трек запущен")
                 } else {
-                    Toast.makeText(this, "Трек не выбран", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MediaPlayerActivity, "Трек не выбран", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -114,16 +140,16 @@ class MediaPlayerActivity : AppCompatActivity() {
     private fun checkPermissions() {
         val permissions = mutableListOf<String>()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this@MediaPlayerActivity, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
         } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this@MediaPlayerActivity, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
             }
         }
         if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
+            ActivityCompat.requestPermissions(this@MediaPlayerActivity , permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
             loadMusicFiles()
         }
@@ -134,17 +160,39 @@ class MediaPlayerActivity : AppCompatActivity() {
             if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 loadMusicFiles()
             } else {
-                Toast.makeText(this, "Разрешите доступ к музыке", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MediaPlayerActivity, "Разрешите доступ к музыке", Toast.LENGTH_LONG).show()
                 Log.e(logTag, "Разрешения отклонены")
             }
         }
+    }
+    private fun bubbleSortTracks(tracks: MutableList<File>) {
+        val n = tracks.size
+        var swapped: Boolean
+        for (i in 0 until n - 1) {
+            swapped = false
+            for (j in 0 until n - i - 1) {
+                if (tracks[j].name.compareTo(tracks[j + 1].name, ignoreCase = true) > 0) {
+                    val temp = tracks[j]
+                    tracks[j] = tracks[j + 1]
+                    tracks[j + 1] = temp
+                    swapped = true
+                    Log.d(logTag, "Сортировка: ${tracks[j + 1].name} ↔ ${tracks[j].name}")
+                }
+            }
+            if (!swapped) break
+        }
+        Log.d(logTag, "Сортировка завершена. Треков: ${tracks.size}")
+    }
+    private fun updateTrackButtons() {
+        buttonPrev.isEnabled = currentTrackIndex > 0
+        buttonNext.isEnabled = currentTrackIndex < trackList.size - 1
     }
     private fun loadMusicFiles() {
         val musicPath = "${getExternalFilesDir(Environment.DIRECTORY_MUSIC)}"
         Log.d(logTag, "Путь к музыке: $musicPath")
         val directory = File(musicPath)
         if (!directory.exists() || !directory.isDirectory) {
-            Toast.makeText(this, "Папка /Music не найдена", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MediaPlayerActivity, "Папка /Music не найдена", Toast.LENGTH_LONG).show()
             Log.e(logTag, "Папка не существует")
             return
         }
@@ -154,10 +202,12 @@ class MediaPlayerActivity : AppCompatActivity() {
         if (!files.isNullOrEmpty()) {
             trackList.clear()
             trackList.addAll(files)
-            Log.d(logTag, "Загружено треков: ${files.size}")
+            bubbleSortTracks(trackList)
+
+            Log.d(logTag, "Загружено и отсортировано треков: ${trackList.size}")
             setupListView()
         } else {
-            Toast.makeText(this, "Нет MP3/WAV в /Music", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@MediaPlayerActivity, "Нет MP3/WAV в /Music", Toast.LENGTH_LONG).show()
             Log.w(logTag, "Папка пуста")
         }
         Log.d("МУЗЫКА", "Путь: $musicPath")
@@ -175,6 +225,7 @@ class MediaPlayerActivity : AppCompatActivity() {
         trackListView.adapter = adapter
         trackListView.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
             playTrack(position)
+            updateTrackButtons()
         }
     }
     private fun playTrack(position: Int) {
@@ -192,10 +243,11 @@ class MediaPlayerActivity : AppCompatActivity() {
             buttonPlayPause.text = "Пауза"
             handler.post(updateSeekBar)
             Toast.makeText(this, "Играет: ${track.name}", Toast.LENGTH_SHORT).show()
-            Log.d(logTag, "Воспроизведение: ${track.name} (длительность: ${mediaPlayer.duration} мс)")
+            Log.d(logTag, "Воспроизведение: ${track.name}")
+            updateTrackButtons()
         } catch (e: Exception) {
             Log.e(logTag, "Ошибка воспроизведения: ${e.message}")
-            Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@MediaPlayerActivity, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
     private fun formatTime(millis: Int): String {

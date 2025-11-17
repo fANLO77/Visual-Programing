@@ -122,13 +122,13 @@ class MediaPlayerActivity : AppCompatActivity() {
         buttonPlayPause.setOnClickListener {
             if (mediaPlayer.isPlaying) {
                 mediaPlayer.pause()
-                buttonPlayPause.text = "Воспроизвести"
+                buttonPlayPause.text = "Play"
                 handler.removeCallbacks(updateSeekBar)
                 Log.d(logTag, "Трек на паузе")
             } else {
                 if (::mediaPlayer.isInitialized && trackList.isNotEmpty()) {
                     mediaPlayer.start()
-                    buttonPlayPause.text = "Пауза"
+                    buttonPlayPause.text = "Pause"
                     handler.post(updateSeekBar)
                     Log.d(logTag, "Трек запущен")
                 } else {
@@ -165,7 +165,7 @@ class MediaPlayerActivity : AppCompatActivity() {
             }
         }
     }
-    private fun bubbleSortTracks(tracks: MutableList<File>) {
+    private fun BubbleSort(tracks: MutableList<File>) {
         val n = tracks.size
         var swapped: Boolean
         for (i in 0 until n - 1) {
@@ -202,8 +202,7 @@ class MediaPlayerActivity : AppCompatActivity() {
         if (!files.isNullOrEmpty()) {
             trackList.clear()
             trackList.addAll(files)
-            bubbleSortTracks(trackList)
-
+            BubbleSort(trackList)
             Log.d(logTag, "Загружено и отсортировано треков: ${trackList.size}")
             setupListView()
         } else {
@@ -240,7 +239,7 @@ class MediaPlayerActivity : AppCompatActivity() {
             seekBarProgress.max = mediaPlayer.duration
             textTotalTime.text = formatTime(mediaPlayer.duration)
             textCurrentTime.text = "00:00"
-            buttonPlayPause.text = "Пауза"
+            buttonPlayPause.text = "Pause"
             handler.post(updateSeekBar)
             Toast.makeText(this, "Играет: ${track.name}", Toast.LENGTH_SHORT).show()
             Log.d(logTag, "Воспроизведение: ${track.name}")
@@ -274,6 +273,6 @@ class MediaPlayerActivity : AppCompatActivity() {
         super.onDestroy()
         mediaPlayer.release()
         handler.removeCallbacks(updateSeekBar)
-        Log.d(logTag, "Приложение уничтожено — MediaPlayer освобождён")
+        Log.d(logTag, "MediaPlayer освобождён")
     }
 }

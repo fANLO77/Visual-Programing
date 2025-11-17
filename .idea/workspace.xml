@@ -20,9 +20,19 @@
           <theme>@style/Theme.AppCompat.Light.DarkActionBar</theme>
         </config>
       </layout>
+      <layout url="file://$PROJECT_DIR$/app/src/main/res/layout/activity_location.xml">
+        <config>
+          <theme>@style/Theme.AppCompat.Light.DarkActionBar</theme>
+        </config>
+      </layout>
       <layout url="file://$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml">
         <config>
           <theme>@style/Theme.Androidproject</theme>
+        </config>
+      </layout>
+      <layout url="file://$PROJECT_DIR$/app/src/main/res/layout/activity_media_player.xml">
+        <config>
+          <theme>@style/Theme.AppCompat.Light.DarkActionBar</theme>
         </config>
       </layout>
     </layouts>
@@ -37,6 +47,10 @@
       <change beforePath="$PROJECT_DIR$/.gradle/8.13/fileHashes/fileHashes.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.13/fileHashes/fileHashes.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+<<<<<<< HEAD
+=======
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/example/android_project/MediaPlayerActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/example/android_project/MediaPlayerActivity.kt" afterDir="false" />
+>>>>>>> MediaPlayer
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -74,8 +88,8 @@
       <list>
         <option value="resourceFile" />
         <option value="Class" />
-        <option value="layoutResourceFile" />
         <option value="Kotlin Class" />
+        <option value="layoutResourceFile" />
       </list>
     </option>
   </component>
@@ -105,9 +119,14 @@
     &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
     &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
     &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+<<<<<<< HEAD
     &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+=======
+    &quot;git-widget-placeholder&quot;: &quot;MediaPlayer&quot;,
+>>>>>>> MediaPlayer
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
     &quot;last_directory_selection&quot;: &quot;C:/Users/20060/Desktop/SIBGUTI/Visual-Programing/app/src/main/java&quot;,
     &quot;last_opened_file_path&quot;: &quot;C:/Users/20060/Desktop/SIBGUTI/Visual-Programing&quot;
@@ -469,12 +488,20 @@
       <map>
         <entry key="com.example.android_project">
           <value>
+<<<<<<< HEAD
             <CheckInfo lastCheckTimestamp="1762697141797" />
+=======
+            <CheckInfo lastCheckTimestamp="1763349848789" />
+>>>>>>> MediaPlayer
           </value>
         </entry>
         <entry key="com.example.android_project.test">
           <value>
+<<<<<<< HEAD
             <CheckInfo lastCheckTimestamp="1762697141799" />
+=======
+            <CheckInfo lastCheckTimestamp="1763349848789" />
+>>>>>>> MediaPlayer
           </value>
         </entry>
         <entry key="com.example.calculator">

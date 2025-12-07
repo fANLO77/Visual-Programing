@@ -23,28 +23,23 @@ import java.util.Date
 import java.util.Locale
 
 class LocationActivity : AppCompatActivity() {
-
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var textLatitude: TextView
     private lateinit var textLongitude: TextView
     private lateinit var textAltitude: TextView
     private lateinit var textTime: TextView
-
     private val PERMISSION_REQUEST_CODE = 102
     private val logTag = "Локация"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_location)
-
         textLatitude = findViewById(R.id.text_latitude)
         textLongitude = findViewById(R.id.text_longitude)
         textAltitude = findViewById(R.id.text_altitude)
         textTime = findViewById(R.id.text_time)
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
@@ -61,7 +56,6 @@ class LocationActivity : AppCompatActivity() {
 
         checkPermissions()
     }
-
     private fun checkPermissions() {
         val permissions = mutableListOf<String>()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -70,7 +64,6 @@ class LocationActivity : AppCompatActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
-
         if (permissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
@@ -78,7 +71,6 @@ class LocationActivity : AppCompatActivity() {
             requestLocationUpdates()
         }
     }
-
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST_CODE) {
@@ -92,7 +84,6 @@ class LocationActivity : AppCompatActivity() {
             }
         }
     }
-
     private fun getLastLocation() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -112,14 +103,12 @@ class LocationActivity : AppCompatActivity() {
             textLatitude.text = "Ошибка: ${e.message}"
         }
     }
-
     private fun requestLocationUpdates() {
         val locationRequest = LocationRequest.create().apply {
             priority = LocationRequest.PRIORITY_HIGH_ACCURACY
             interval = 10000
             fastestInterval = 5000
         }
-
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return
@@ -127,18 +116,14 @@ class LocationActivity : AppCompatActivity() {
         fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
         Log.d(logTag, "Обновления локации запрошены")
     }
-
     private fun updateLocationUI(location: Location) {
         textLatitude.text = "Широта: ${location.latitude}"
         textLongitude.text = "Долгота: ${location.longitude}"
-
         textAltitude.text = if (location.hasAltitude()) "Высота: ${location.altitude}" else "Высота: N/A"
-
         val time = location.time
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
         textTime.text = "Время: ${dateFormat.format(Date(time))}"
     }
-
     private fun writeLocationToJson(location: Location) {
         val gson = Gson()
         val data = mapOf(
@@ -147,9 +132,7 @@ class LocationActivity : AppCompatActivity() {
             "altitude" to if (location.hasAltitude()) location.altitude else null,
             "time" to location.time
         )
-
         val json = gson.toJson(data) + "\n"
-
         val file = File(filesDir, "location_data.json")
         try {
             FileOutputStream(file, true).use { outputStream ->
@@ -160,7 +143,6 @@ class LocationActivity : AppCompatActivity() {
             Log.e(logTag, "Ошибка записи в файл: ${e.message}")
         }
     }
-
     override fun onPause() {
         super.onPause()
         fusedLocationClient.removeLocationUpdates(locationCallback)

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ZMQ Сокеты - Тестирование"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Готов к работе"
+        android:textSize="14sp"
+        android:background="#E0E0E0"
+        android:padding="8dp"
+        android:layout_marginBottom="16dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:id="@+id/tvMessages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Лог сообщений:\n"
+            android:textSize="12sp"
+            android:background="#F5F5F5"
+            android:padding="8dp" />
+
+    </ScrollView>
+
+    <Button
+        android:id="@+id/btnStartServer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Запустить сервер"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnStartClient"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Запустить внутренний клиент"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnStartExternalClient"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Подключиться к внешнему серверу"
+        android:backgroundTint="#4CAF50" />
+
+</LinearLayout>

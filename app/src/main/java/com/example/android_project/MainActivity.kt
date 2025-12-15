@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
-
 class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +26,10 @@ class MainActivity : AppCompatActivity() {
         btnOpenLocation.setOnClickListener {
             val intent = Intent(this, LocationActivity::class.java)
             startActivity(intent)
+        }
+        val btnGoToSockets = findViewById<Button>(R.id.btnGoToSockets)
+        btnGoToSockets.setOnClickListener {
+            startActivity(Intent(this, SocketsActivity::class.java))
         }
     }
 }

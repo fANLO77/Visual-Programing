@@ -33,4 +33,10 @@
         android:layout_height="wrap_content"
         android:text="Локатор"
         android:layout_margin="16dp" />
+    <Button
+        android:id="@+id/btnGoToSockets"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ZMQ Сокеты (передача данных)"
+        android:layout_margin="16dp" />
 </LinearLayout>

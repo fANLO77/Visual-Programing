@@ -36,5 +36,12 @@
         android:textSize="18sp"
         android:layout_marginBottom="8dp"
         android:text="Время: N/A" />
+    <TextView
+        android:id="@+id/text_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ZMQ Status: Waiting..."
+        android:textSize="16sp"
+        android:layout_marginTop="20dp" />
 
 </LinearLayout>

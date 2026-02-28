@@ -2,6 +2,7 @@ package com.example.android_project
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Bundle
 import android.os.Looper
 import android.util.Log
@@ -9,143 +10,192 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import android.location.Location
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.*
 import com.google.gson.Gson
+import kotlinx.coroutines.*
+import org.zeromq.SocketType
+import org.zeromq.ZContext
+import org.zeromq.ZMQ
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 class LocationActivity : AppCompatActivity() {
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var locationCallback: LocationCallback
+    // UI элементы
     private lateinit var textLatitude: TextView
     private lateinit var textLongitude: TextView
     private lateinit var textAltitude: TextView
     private lateinit var textTime: TextView
+    private lateinit var textStatus: TextView // Добавь это в XML для статуса сети
+
+    // Локация
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var locationCallback: LocationCallback
+
+    // ZMQ и Потоки
+    private val zmqContext = ZContext()
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // НАСТРОЙКИ (Проверь свой IP через hostname -I в WSL)
+    private val SERVER_IP = "172.31.53.226"
+    private val SERVER_PORT = "5555"
     private val PERMISSION_REQUEST_CODE = 102
-    private val logTag = "Локация"
+    private val TAG = "LocationLog"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_location)
+
+        // Инициализация View
         textLatitude = findViewById(R.id.text_latitude)
         textLongitude = findViewById(R.id.text_longitude)
         textAltitude = findViewById(R.id.text_altitude)
         textTime = findViewById(R.id.text_time)
+        // Если в XML нет text_status, закомментируй строку ниже или добавь TextView
+        textStatus = findViewById(R.id.text_status)
+
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        // Callback получения координат
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
-                    Log.d(logTag, "Обновление локации: lat=$${location.latitude}, lon= $${location.longitude}")
-
-                    updateLocationUI(location)
-
-                    writeLocationToJson(location)
-                } ?: run {
-                    Log.w(logTag, "Локация null")
+                    processNewLocation(location)
                 }
             }
         }
 
         checkPermissions()
     }
-    private fun checkPermissions() {
-        val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        }
-        if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
-        } else {
-            getLastLocation()
-            requestLocationUpdates()
-        }
+
+    private fun processNewLocation(location: Location) {
+        // 1. Обновляем экран
+        updateLocationUI(location)
+
+        // 2. Пишем в локальный файл (для истории)
+        writeLocationToLocalJson(location)
+
+        // 3. Отправляем на C++ сервер (ZMQ)
+        sendLocationToCppServer(location)
     }
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                Log.d(logTag, "Разрешения даны")
-                getLastLocation()
-                requestLocationUpdates()
-            } else {
-                Log.e(logTag, "Разрешения отклонены")
-                textLatitude.text = "Разрешения не даны"
+
+    private fun sendLocationToCppServer(location: Location) {
+        scope.launch {
+            var socket: ZMQ.Socket? = null
+            try {
+                // Создаем сокет типа REQ (Запрос)
+                socket = zmqContext.createSocket(SocketType.REQ)
+
+                // Устанавливаем таймауты, чтобы REQ не блокировался навсегда
+                socket.receiveTimeOut = 3000
+                socket.sendTimeOut = 3000
+
+                val address = "tcp://$SERVER_IP:$SERVER_PORT"
+                socket.connect(address)
+
+                // Формируем JSON пакет (соответствует структуре сервера)
+                val data = mapOf(
+                    "lat" to location.latitude,
+                    "lon" to location.longitude,
+                    "alt" to if (location.hasAltitude()) location.altitude else 0.0,
+                    "time" to SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                )
+                val jsonPayload = Gson().toJson(data)
+
+                // Попытка отправки
+                val isSent = socket.send(jsonPayload.toByteArray(ZMQ.CHARSET), 0)
+
+                if (isSent) {
+                    // Ждем ответ от REP сокета сервера
+                    val response = socket.recvStr(0)
+                    if (response != null) {
+                        updateStatus("Сервер: $response")
+                        Log.d(TAG, "Успешно отправлено: $jsonPayload")
+                    } else {
+                        updateStatus("Сервер не ответил (Timeout)")
+                    }
+                } else {
+                    updateStatus("Ошибка отправки")
+                }
+
+            } catch (e: Exception) {
+                // Тот самый try-catch для обработки разрыва соединения по ТЗ
+                Log.e(TAG, "Ошибка ZMQ: ${e.message}")
+                updateStatus("Разрыв соединения: реконнект...")
+            } finally {
+                // Закрываем сокет после каждой итерации для чистого реконнекта
+                socket?.close()
             }
         }
     }
-    private fun getLastLocation() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-            location?.let {
-                Log.d(logTag, "Последняя локация: lat=$$ {it.latitude}, lon= $${it.longitude}")
-                updateLocationUI(it)
-                writeLocationToJson(it)
-            } ?: run {
-                Log.w(logTag, "Последняя локация null")
-                textLatitude.text = "Локация не доступна"
-            }
-        }.addOnFailureListener { e ->
-            Log.e(logTag, "Ошибка получения локации: ${e.message}")
-            textLatitude.text = "Ошибка: ${e.message}"
-        }
-    }
-    private fun requestLocationUpdates() {
-        val locationRequest = LocationRequest.create().apply {
-            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-            interval = 10000
-            fastestInterval = 5000
-        }
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
-        Log.d(logTag, "Обновления локации запрошены")
-    }
+
     private fun updateLocationUI(location: Location) {
-        textLatitude.text = "Широта: ${location.latitude}"
-        textLongitude.text = "Долгота: ${location.longitude}"
-        textAltitude.text = if (location.hasAltitude()) "Высота: ${location.altitude}" else "Высота: N/A"
-        val time = location.time
-        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
-        textTime.text = "Время: ${dateFormat.format(Date(time))}"
+        runOnUiThread {
+            textLatitude.text = "Широта: ${location.latitude}"
+            textLongitude.text = "Долгота: ${location.longitude}"
+            textAltitude.text = "Высота: ${if (location.hasAltitude()) location.altitude else "N/A"}"
+            val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+            textTime.text = "Время: ${sdf.format(Date(location.time))}"
+        }
     }
-    private fun writeLocationToJson(location: Location) {
-        val gson = Gson()
+
+    private fun updateStatus(msg: String) {
+        runOnUiThread {
+            // Если добавишь TextView для статуса в XML
+            textStatus.text = "ZMQ: $msg"
+        }
+    }
+
+    private fun writeLocationToLocalJson(location: Location) {
         val data = mapOf(
             "latitude" to location.latitude,
             "longitude" to location.longitude,
             "altitude" to if (location.hasAltitude()) location.altitude else null,
             "time" to location.time
         )
-        val json = gson.toJson(data) + "\n"
-        val file = File(filesDir, "location_data.json")
+        val json = Gson().toJson(data) + "\n"
         try {
-            FileOutputStream(file, true).use { outputStream ->
-                outputStream.write(json.toByteArray())
-            }
-            Log.d(logTag, "Данные записаны в JSON: $json")
+            val file = File(filesDir, "location_history.json")
+            FileOutputStream(file, true).use { it.write(json.toByteArray()) }
         } catch (e: Exception) {
-            Log.e(logTag, "Ошибка записи в файл: ${e.message}")
+            Log.e(TAG, "Файл не записан: ${e.message}")
         }
     }
-    override fun onPause() {
-        super.onPause()
+
+    private fun checkPermissions() {
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        val needed = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (needed.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST_CODE)
+        } else {
+            requestLocationUpdates()
+        }
+    }
+
+    private fun requestLocationUpdates() {
+        val request = LocationRequest.create().apply {
+            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
+            interval = 5000 // Каждые 5 секунд
+            fastestInterval = 2000
+        }
+
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+            updateStatus("Поиск GPS...")
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        Log.d(logTag, "Обновления локации остановлены")
+        scope.cancel() // Останавливаем корутины
+        zmqContext.destroy() // Закрываем контекст ZMQ
     }
 }

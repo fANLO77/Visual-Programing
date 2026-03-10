@@ -22,42 +22,29 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class LocationActivity : AppCompatActivity() {
-    // UI элементы
     private lateinit var textLatitude: TextView
     private lateinit var textLongitude: TextView
     private lateinit var textAltitude: TextView
     private lateinit var textTime: TextView
-    private lateinit var textStatus: TextView // Добавь это в XML для статуса сети
-
-    // Локация
+    private lateinit var textStatus: TextView
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
-
-    // ZMQ и Потоки
     private val zmqContext = ZContext()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-    // НАСТРОЙКИ (Проверь свой IP через hostname -I в WSL)
     private val SERVER_IP = "172.31.53.226"
     private val SERVER_PORT = "5555"
     private val PERMISSION_REQUEST_CODE = 102
     private val TAG = "LocationLog"
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_location)
-
-        // Инициализация View
         textLatitude = findViewById(R.id.text_latitude)
         textLongitude = findViewById(R.id.text_longitude)
         textAltitude = findViewById(R.id.text_altitude)
         textTime = findViewById(R.id.text_time)
-        // Если в XML нет text_status, закомментируй строку ниже или добавь TextView
         textStatus = findViewById(R.id.text_status)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        // Callback получения координат
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 locationResult.lastLocation?.let { location ->
@@ -68,33 +55,21 @@ class LocationActivity : AppCompatActivity() {
 
         checkPermissions()
     }
-
     private fun processNewLocation(location: Location) {
-        // 1. Обновляем экран
         updateLocationUI(location)
-
-        // 2. Пишем в локальный файл (для истории)
         writeLocationToLocalJson(location)
-
-        // 3. Отправляем на C++ сервер (ZMQ)
         sendLocationToCppServer(location)
     }
-
     private fun sendLocationToCppServer(location: Location) {
         scope.launch {
             var socket: ZMQ.Socket? = null
             try {
-                // Создаем сокет типа REQ (Запрос)
                 socket = zmqContext.createSocket(SocketType.REQ)
 
-                // Устанавливаем таймауты, чтобы REQ не блокировался навсегда
                 socket.receiveTimeOut = 3000
                 socket.sendTimeOut = 3000
-
                 val address = "tcp://$SERVER_IP:$SERVER_PORT"
                 socket.connect(address)
-
-                // Формируем JSON пакет (соответствует структуре сервера)
                 val data = mapOf(
                     "lat" to location.latitude,
                     "lon" to location.longitude,
@@ -102,12 +77,9 @@ class LocationActivity : AppCompatActivity() {
                     "time" to SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                 )
                 val jsonPayload = Gson().toJson(data)
-
-                // Попытка отправки
                 val isSent = socket.send(jsonPayload.toByteArray(ZMQ.CHARSET), 0)
 
                 if (isSent) {
-                    // Ждем ответ от REP сокета сервера
                     val response = socket.recvStr(0)
                     if (response != null) {
                         updateStatus("Сервер: $response")
@@ -118,18 +90,14 @@ class LocationActivity : AppCompatActivity() {
                 } else {
                     updateStatus("Ошибка отправки")
                 }
-
             } catch (e: Exception) {
-                // Тот самый try-catch для обработки разрыва соединения по ТЗ
                 Log.e(TAG, "Ошибка ZMQ: ${e.message}")
                 updateStatus("Разрыв соединения: реконнект...")
             } finally {
-                // Закрываем сокет после каждой итерации для чистого реконнекта
                 socket?.close()
             }
         }
     }
-
     private fun updateLocationUI(location: Location) {
         runOnUiThread {
             textLatitude.text = "Широта: ${location.latitude}"
@@ -139,14 +107,11 @@ class LocationActivity : AppCompatActivity() {
             textTime.text = "Время: ${sdf.format(Date(location.time))}"
         }
     }
-
     private fun updateStatus(msg: String) {
         runOnUiThread {
-            // Если добавишь TextView для статуса в XML
             textStatus.text = "ZMQ: $msg"
         }
     }
-
     private fun writeLocationToLocalJson(location: Location) {
         val data = mapOf(
             "latitude" to location.latitude,
@@ -162,7 +127,6 @@ class LocationActivity : AppCompatActivity() {
             Log.e(TAG, "Файл не записан: ${e.message}")
         }
     }
-
     private fun checkPermissions() {
         val permissions = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
@@ -178,11 +142,10 @@ class LocationActivity : AppCompatActivity() {
             requestLocationUpdates()
         }
     }
-
     private fun requestLocationUpdates() {
         val request = LocationRequest.create().apply {
             priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-            interval = 5000 // Каждые 5 секунд
+            interval = 5000
             fastestInterval = 2000
         }
 
@@ -191,11 +154,10 @@ class LocationActivity : AppCompatActivity() {
             updateStatus("Поиск GPS...")
         }
     }
-
     override fun onDestroy() {
         super.onDestroy()
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        scope.cancel() // Останавливаем корутины
-        zmqContext.destroy() // Закрываем контекст ZMQ
+        scope.cancel()
+        zmqContext.destroy()
     }
 }

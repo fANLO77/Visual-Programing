@@ -39,4 +39,11 @@
         android:layout_height="wrap_content"
         android:text="ZMQ Сокеты (передача данных)"
         android:layout_margin="16dp" />
+    <Button
+        android:id="@+id/btn_cell_service"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CELL SERVICE (фоновая передача)"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="#673AB7" />
 </LinearLayout>

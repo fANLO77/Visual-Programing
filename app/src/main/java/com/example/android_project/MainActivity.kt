@@ -31,5 +31,9 @@ class MainActivity : AppCompatActivity() {
         btnGoToSockets.setOnClickListener {
             startActivity(Intent(this, SocketsActivity::class.java))
         }
+        val btnCellService = findViewById<Button>(R.id.btn_cell_service)
+        btnCellService.setOnClickListener {
+            startActivity(Intent(this, CellLocationServiceActivity::class.java))
+        }
     }
 }

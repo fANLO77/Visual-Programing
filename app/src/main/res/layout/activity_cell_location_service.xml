@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="#F5F5F5">
+
+    <TextView
+        android:id="@+id/tv_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="CellLocationService — Управление"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:textColor="#000000" />
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:text="Сервис остановлен"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:textColor="#D32F2F" />
+
+    <Button
+        android:id="@+id/btn_start_service"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="40dp"
+        android:text="Запустить сервис"
+        android:textSize="18sp"
+        android:backgroundTint="#4CAF50" />
+
+    <Button
+        android:id="@+id/btn_stop_service"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Остановить сервис"
+        android:textSize="18sp"
+        android:backgroundTint="#F44336" />
+
+    <Button
+        android:id="@+id/btn_show_last_json"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="Показать последний JSON"
+        android:textSize="18sp"
+        android:backgroundTint="#2196F3" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="24dp">
+
+        <TextView
+            android:id="@+id/tv_last_json"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"
+            android:background="#FFFFFF"
+            android:text="Здесь будет последний отправленный JSON..."
+            android:textSize="14sp"
+            android:textIsSelectable="true" />
+    </ScrollView>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:id="@+id/tv_cell_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ожидание данных о сетях..."
+            android:textSize="14sp"
+            android:padding="12dp"
+            android:background="#F0F0F0"
+            android:textIsSelectable="true" />
+    </ScrollView>
+
+</LinearLayout>

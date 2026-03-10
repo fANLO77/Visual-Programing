@@ -41,30 +41,24 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class CellLocationService : Service() {
-
     companion object {
         @Volatile var lastCellInfoText: String = "Нет данных о вышках"
         @Volatile var lastUpdateTime: Long = 0
-
         private const val CHANNEL_ID = "cell_service_channel"
         private const val NOTIF_ID = 1001
         private const val UPDATE_INTERVAL = 30000L
     }
-
     private lateinit var telephonyManager: TelephonyManager
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
     private var lastLocation: Location? = null
     private val handler = Handler(Looper.getMainLooper())
     private var periodicRunnable: Runnable? = null
-
     private val zmqContext = ZContext()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
     private val SERVER_IP = "172.31.53.226"
     private val SERVER_PORT = "5555"
     private val TAG = "CellServiceLog"
-
     override fun onCreate() {
         super.onCreate()
         telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
@@ -76,7 +70,6 @@ class CellLocationService : Service() {
         startLocationUpdates()
         startPeriodicSending()
     }
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -90,14 +83,12 @@ class CellLocationService : Service() {
             manager.createNotificationChannel(channel)
         }
     }
-
     private fun buildNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Сбор данных о сети и локации")
             .setContentText("Работает в фоне")
@@ -106,25 +97,21 @@ class CellLocationService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
-
     private fun startLocationUpdates() {
         val locationRequest = LocationRequest.create().apply {
             priority = LocationRequest.PRIORITY_HIGH_ACCURACY
             interval = 10000
             fastestInterval = 5000
         }
-
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 lastLocation = result.lastLocation
             }
         }
-
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback!!, Looper.getMainLooper())
         }
     }
-
     private fun startPeriodicSending() {
         periodicRunnable = Runnable {
             lastLocation?.let { loc ->
@@ -141,24 +128,19 @@ class CellLocationService : Service() {
         }
         handler.post(periodicRunnable!!)
     }
-
     private fun buildFullJson(): JSONObject {
         val json = JSONObject()
-
         lastLocation?.let { loc ->
             json.put("latitude", loc.latitude)
             json.put("longitude", loc.longitude)
             json.put("altitude", if (loc.hasAltitude()) loc.altitude else 0.0)
             json.put("currentTime", loc.time)
             json.put("accuracy", loc.accuracy)
-            // Добавляем читаемое время — серверу будет удобно
             json.put("readableTime", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(loc.time)))
         }
-
         val cells = JSONArray()
         val hasPhonePerm = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ||
                 ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
         if (hasPhonePerm) {
             telephonyManager.allCellInfo?.forEach { cellInfo ->
                 val cell = JSONObject()
@@ -218,26 +200,22 @@ class CellLocationService : Service() {
             }
         }
         json.put("cells", cells)
-
         json.put("totalRxBytes", TrafficStats.getTotalRxBytes())
         json.put("totalTxBytes", TrafficStats.getTotalTxBytes())
         json.put("mobileRxBytes", TrafficStats.getMobileRxBytes())
 
         return json
     }
-
     private fun updateCellInfoText() {
         val sb = StringBuilder("Данные о сетях (${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}):\n\n")
 
         val hasPerm = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ||
                 ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
         if (!hasPerm) {
             lastCellInfoText = "Нет разрешений READ_PHONE_STATE / ACCESS_COARSE_LOCATION"
             lastUpdateTime = System.currentTimeMillis()
             return
         }
-
         val cellInfoList = telephonyManager.allCellInfo ?: emptyList()
         if (cellInfoList.isEmpty()) {
             sb.append("Нет доступных вышек\n")
@@ -273,11 +251,9 @@ class CellLocationService : Service() {
                 sb.append("  Registered: ${info.isRegistered}\n\n")
             }
         }
-
         lastCellInfoText = sb.toString()
         lastUpdateTime = System.currentTimeMillis()
     }
-
     private fun getMccString(identity: CellIdentity): String {
         return when (identity) {
             is CellIdentityLte -> if (Build.VERSION.SDK_INT >= 28) identity.mccString ?: "unknown" else identity.mcc.toString()
@@ -286,7 +262,6 @@ class CellLocationService : Service() {
             else -> "unknown"
         }
     }
-
     private fun getMncString(identity: CellIdentity): String {
         return when (identity) {
             is CellIdentityLte -> if (Build.VERSION.SDK_INT >= 28) identity.mncString ?: "unknown" else identity.mnc.toString()
@@ -295,7 +270,6 @@ class CellLocationService : Service() {
             else -> "unknown"
         }
     }
-
     private fun getBand(identity: CellIdentity): Int {
         if (Build.VERSION.SDK_INT < 30) return -1
         val bands = when (identity) {
@@ -305,7 +279,6 @@ class CellLocationService : Service() {
         }
         return bands?.firstOrNull() ?: -1
     }
-
     private fun sendToBackend(json: JSONObject) {
         scope.launch {
             var socket: ZMQ.Socket? = null
@@ -330,7 +303,6 @@ class CellLocationService : Service() {
             }
         }
     }
-
     private fun writeFullJsonToLocal(json: JSONObject) {
         val jsonString = json.toString() + "\n"
         try {
@@ -341,11 +313,8 @@ class CellLocationService : Service() {
             Log.e(TAG, "Ошибка записи в файл: ${e.message}")
         }
     }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
-
     override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onDestroy() {
         periodicRunnable?.let { handler.removeCallbacks(it) }
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }

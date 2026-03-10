@@ -43,7 +43,6 @@ class LocationActivity : AppCompatActivity() {
         textAltitude = findViewById(R.id.text_altitude)
         textTime = findViewById(R.id.text_time)
         textStatus = findViewById(R.id.text_status)
-
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {

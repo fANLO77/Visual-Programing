@@ -28,6 +28,7 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.android.gms.location.*
 import kotlinx.coroutines.*
 import org.zeromq.SocketType
@@ -42,11 +43,10 @@ import java.util.*
 
 class CellLocationService : Service() {
     companion object {
-        @Volatile var lastCellInfoText: String = "Нет данных о вышках"
-        @Volatile var lastUpdateTime: Long = 0
         private const val CHANNEL_ID = "cell_service_channel"
         private const val NOTIF_ID = 1001
-        private const val UPDATE_INTERVAL = 30000L
+        private const val UPDATE_INTERVAL = 5000L
+        const val BROADCAST_ACTION = "CellLocationUpdate"
     }
     private lateinit var telephonyManager: TelephonyManager
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -119,7 +119,8 @@ class CellLocationService : Service() {
                     val json = buildFullJson()
                     sendToBackend(json)
                     writeFullJsonToLocal(json)
-                    updateCellInfoText()
+                    val cellInfoText = buildCellInfoText()
+                    sendBroadcastUpdate(cellInfoText)
                 } catch (e: Exception) {
                     Log.e(TAG, "Ошибка в периодической задаче", e)
                 }
@@ -144,6 +145,7 @@ class CellLocationService : Service() {
         if (hasPhonePerm) {
             telephonyManager.allCellInfo?.forEach { cellInfo ->
                 val cell = JSONObject()
+                cell.put("registered", cellInfo.isRegistered)
                 when {
                     cellInfo is CellInfoLte -> {
                         val id = cellInfo.cellIdentity as CellIdentityLte
@@ -203,18 +205,14 @@ class CellLocationService : Service() {
         json.put("totalRxBytes", TrafficStats.getTotalRxBytes())
         json.put("totalTxBytes", TrafficStats.getTotalTxBytes())
         json.put("mobileRxBytes", TrafficStats.getMobileRxBytes())
-
         return json
     }
-    private fun updateCellInfoText() {
+    private fun buildCellInfoText(): String {
         val sb = StringBuilder("Данные о сетях (${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}):\n\n")
-
         val hasPerm = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ||
                 ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!hasPerm) {
-            lastCellInfoText = "Нет разрешений READ_PHONE_STATE / ACCESS_COARSE_LOCATION"
-            lastUpdateTime = System.currentTimeMillis()
-            return
+            return "Нет разрешений READ_PHONE_STATE / ACCESS_COARSE_LOCATION"
         }
         val cellInfoList = telephonyManager.allCellInfo ?: emptyList()
         if (cellInfoList.isEmpty()) {
@@ -251,8 +249,7 @@ class CellLocationService : Service() {
                 sb.append("  Registered: ${info.isRegistered}\n\n")
             }
         }
-        lastCellInfoText = sb.toString()
-        lastUpdateTime = System.currentTimeMillis()
+        return sb.toString()
     }
     private fun getMccString(identity: CellIdentity): String {
         return when (identity) {
@@ -312,6 +309,12 @@ class CellLocationService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Ошибка записи в файл: ${e.message}")
         }
+    }
+    private fun sendBroadcastUpdate(cellInfoText: String) {
+        val intent = Intent(BROADCAST_ACTION)
+        intent.putExtra("Status", "Сервис работает (обновление: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())})")
+        intent.putExtra("CellInfo", cellInfoText)
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null

@@ -8,23 +8,10 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
-import android.net.TrafficStats
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.telephony.CellIdentity
-import android.telephony.CellIdentityGsm
-import android.telephony.CellIdentityLte
-import android.telephony.CellIdentityNr
-import android.telephony.CellInfo
-import android.telephony.CellInfoGsm
-import android.telephony.CellInfoLte
-import android.telephony.CellInfoNr
-import android.telephony.CellSignalStrengthGsm
-import android.telephony.CellSignalStrengthLte
-import android.telephony.CellSignalStrengthNr
-import android.telephony.TelephonyManager
+import android.telephony.*
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -45,22 +32,33 @@ class CellLocationService : Service() {
     companion object {
         private const val CHANNEL_ID = "cell_service_channel"
         private const val NOTIF_ID = 1001
-        private const val UPDATE_INTERVAL = 5000L
+        private const val UPDATE_INTERVAL = 3000L
         const val BROADCAST_ACTION = "CellLocationUpdate"
+        private const val DEFAULT_SERVER_IP = "192.168.0.17"
+        private const val DEFAULT_SERVER_PORT = "5559"
+        private const val TAG = "CellServiceLog"
     }
+
     private lateinit var telephonyManager: TelephonyManager
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
     private var lastLocation: Location? = null
     private val handler = Handler(Looper.getMainLooper())
     private var periodicRunnable: Runnable? = null
+
     private val zmqContext = ZContext()
+    private var zmqSocket: ZMQ.Socket? = null
+    private var lastConnectedIp = ""
+    private var lastConnectedPort = ""
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val SERVER_IP = "172.31.53.226"
-    private val SERVER_PORT = "5555"
-    private val TAG = "CellServiceLog"
+
+    private var currentServerIp = DEFAULT_SERVER_IP
+    private var currentServerPort = DEFAULT_SERVER_PORT
+
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "🚀 Service onCreate()")
         telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
@@ -69,260 +67,242 @@ class CellLocationService : Service() {
 
         startLocationUpdates()
         startPeriodicSending()
+
+        initZmqSocket()
     }
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Cell & Location Service",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Фоновый сервис сбора локации и данных о сотовых сетях"
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.let {
+            val newIp = it.getStringExtra("SERVER_IP") ?: DEFAULT_SERVER_IP
+            val newPort = it.getStringExtra("SERVER_PORT") ?: DEFAULT_SERVER_PORT
+
+            Log.d(TAG, "📡 Received config: $newIp:$newPort")
+
+            if (newIp != currentServerIp || newPort != currentServerPort) {
+                currentServerIp = newIp
+                currentServerPort = newPort
+                initZmqSocket()
             }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+        }
+        return START_STICKY
+    }
+
+    private fun initZmqSocket() {
+        scope.launch {
+            try {
+                Log.d(TAG, "🔌 Initializing ZMQ socket to $currentServerIp:$currentServerPort")
+
+                zmqSocket?.close()
+
+                zmqSocket = zmqContext.createSocket(SocketType.PUSH)
+                zmqSocket?.connect("tcp://$currentServerIp:$currentServerPort")
+
+                delay(100)
+
+                lastConnectedIp = currentServerIp
+                lastConnectedPort = currentServerPort
+
+                Log.d(TAG, "✅ ZMQ socket connected successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ ZMQ init failed: ${e.message}")
+                e.printStackTrace()
+            }
         }
     }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(CHANNEL_ID, "Cell Service", NotificationManager.IMPORTANCE_LOW)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
     private fun buildNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Сбор данных о сети и локации")
-            .setContentText("Работает в фоне")
+            .setContentTitle("Мониторинг сети")
+            .setContentText("Сбор данных запущен")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
+
     private fun startLocationUpdates() {
-        val locationRequest = LocationRequest.create().apply {
-            priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-            interval = 10000
-            fastestInterval = 5000
-        }
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000).build()
         locationCallback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                lastLocation = result.lastLocation
+            override fun onLocationResult(res: LocationResult) {
+                lastLocation = res.lastLocation
+                Log.d(TAG, "📍 Location updated: ${res.lastLocation?.latitude}, ${res.lastLocation?.longitude}")
             }
         }
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback!!, Looper.getMainLooper())
+            fusedLocationClient.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        } else {
+            Log.e(TAG, "❌ Location permission not granted!")
         }
     }
+
     private fun startPeriodicSending() {
         periodicRunnable = Runnable {
-            lastLocation?.let { loc ->
-                try {
-                    val json = buildFullJson()
-                    sendToBackend(json)
-                    writeFullJsonToLocal(json)
-                    val cellInfoText = buildCellInfoText()
-                    sendBroadcastUpdate(cellInfoText)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Ошибка в периодической задаче", e)
+            try {
+                val loc = lastLocation
+                if (loc != null) {
+                    Log.d(TAG, "📤 Preparing to send data...")
+                    val json = buildFullJson(loc)
+                    sendToBackend(json.toString())
+                    writeToPhoneLog(json.toString())
+                    sendBroadcastUpdate(buildCellInfoText(), json.toString(2))
+                } else {
+                    Log.w(TAG, "⚠️ No location available yet")
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error in periodic sending: ${e.message}")
             }
             handler.postDelayed(periodicRunnable!!, UPDATE_INTERVAL)
         }
         handler.post(periodicRunnable!!)
     }
-    private fun buildFullJson(): JSONObject {
-        val json = JSONObject()
-        lastLocation?.let { loc ->
-            json.put("latitude", loc.latitude)
-            json.put("longitude", loc.longitude)
-            json.put("altitude", if (loc.hasAltitude()) loc.altitude else 0.0)
-            json.put("currentTime", loc.time)
-            json.put("accuracy", loc.accuracy)
-            json.put("readableTime", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(loc.time)))
+
+    private fun buildFullJson(location: Location): JSONObject {
+        val json = JSONObject().apply {
+            put("latitude", location.latitude)
+            put("longitude", location.longitude)
+            put("currentTime", location.time)
+            put("readableTime", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(location.time)))
         }
         val cells = JSONArray()
-        val hasPhonePerm = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ||
-                ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (hasPhonePerm) {
-            telephonyManager.allCellInfo?.forEach { cellInfo ->
-                val cell = JSONObject()
-                cell.put("registered", cellInfo.isRegistered)
-                when {
-                    cellInfo is CellInfoLte -> {
-                        val id = cellInfo.cellIdentity as CellIdentityLte
-                        val sig = cellInfo.cellSignalStrength as CellSignalStrengthLte
-                        cell.put("type", "lte")
-                        cell.put("band", getBand(id))
-                        cell.put("cellIdentity", id.ci)
-                        cell.put("earfcn", id.earfcn)
-                        cell.put("mcc", getMccString(id))
-                        cell.put("mnc", getMncString(id))
-                        cell.put("pci", id.pci)
-                        cell.put("tac", id.tac)
-                        cell.put("asuLevel", sig.asuLevel)
-                        cell.put("cqi", sig.cqi)
-                        cell.put("rsrp", sig.rsrp)
-                        cell.put("rsrq", sig.rsrq)
-                        cell.put("rssi", if (Build.VERSION.SDK_INT >= 29) sig.rssi else -1)
-                        cell.put("rssnr", sig.rssnr)
-                        cell.put("timingAdvance", sig.timingAdvance)
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            val cellInfo = telephonyManager.allCellInfo
+            if (cellInfo.isNullOrEmpty()) {
+                Log.w(TAG, "⚠️ No cell info available")
+            } else {
+                Log.d(TAG, "📡 Found ${cellInfo.size} cell(s)")
+                cellInfo.forEach { info ->
+                    val cell = JSONObject().apply { put("registered", info.isRegistered) }
+                    try {
+                        when (info) {
+                            is CellInfoLte -> {
+                                cell.put("type", "lte")
+                                cell.put("pci", info.cellIdentity.pci)
+                                cell.put("rsrp", info.cellSignalStrength.rsrp)
+                                cell.put("rsrq", info.cellSignalStrength.rsrq)
+                                cell.put("sinr", info.cellSignalStrength.rssnr / 10.0)
+                                val lteId = info.cellIdentity
+                                cell.put("mcc", info.cellIdentity.mccString ?: "")
+                                cell.put("mnc", info.cellIdentity.mncString ?: "")
+                                Log.d(TAG, "📶 LTE PCI: ${info.cellIdentity.pci}, RSRP: ${info.cellSignalStrength.rsrp}")
+                            }
+                            is CellInfoNr -> {
+                                val id = info.cellIdentity as CellIdentityNr
+                                val sig = info.cellSignalStrength as CellSignalStrengthNr
+                                cell.put("type", "nr")
+                                cell.put("pci", id.pci)
+                                cell.put("rsrp", sig.ssRsrp)
+                                cell.put("rsrq", sig.ssRsrq)
+                                cell.put("sinr", sig.ssSinr)
+                                cell.put("mcc", id.mccString ?: "")
+                                cell.put("mnc", id.mncString ?: "")
+                                Log.d(TAG, "📶 5G PCI: ${id.pci}, RSRP: ${sig.ssRsrp}")
+                            }
+                            is CellInfoGsm -> {
+                                cell.put("type", "gsm")
+                                cell.put("cid", info.cellIdentity.cid)
+                                cell.put("pci", 0)
+                                cell.put("rsrp", info.cellSignalStrength.dbm)
+                                val gsmId = info.cellIdentity
+                                cell.put("mcc", info.cellIdentity.mccString ?: "")
+                                cell.put("mnc", info.cellIdentity.mncString ?: "")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing cell info: ${e.message}")
                     }
-                    cellInfo is CellInfoGsm -> {
-                        val id = cellInfo.cellIdentity as CellIdentityGsm
-                        val sig = cellInfo.cellSignalStrength as CellSignalStrengthGsm
-                        cell.put("type", "gsm")
-                        cell.put("cellIdentity", id.cid)
-                        cell.put("bsic", id.bsic)
-                        cell.put("arfcn", id.arfcn)
-                        cell.put("lac", id.lac)
-                        cell.put("mcc", getMccString(id))
-                        cell.put("mnc", getMncString(id))
-                        cell.put("psc", id.psc)
-                        cell.put("dbm", sig.dbm)
-                        cell.put("rssi", if (Build.VERSION.SDK_INT >= 30) sig.rssi else -1)
-                        cell.put("timingAdvance", sig.timingAdvance)
-                    }
-                    Build.VERSION.SDK_INT >= 29 && cellInfo is CellInfoNr -> {
-                        val id = cellInfo.cellIdentity as CellIdentityNr
-                        val sig = cellInfo.cellSignalStrength as CellSignalStrengthNr
-                        cell.put("type", "nr")
-                        cell.put("band", getBand(id))
-                        cell.put("nci", id.nci)
-                        cell.put("pci", id.pci)
-                        cell.put("nrArfcn", id.nrarfcn)
-                        cell.put("tac", id.tac)
-                        cell.put("mcc", getMccString(id))
-                        cell.put("mnc", getMncString(id))
-                        cell.put("ssRsrp", sig.ssRsrp)
-                        cell.put("ssRsrq", sig.ssRsrq)
-                        cell.put("ssSinr", sig.ssSinr)
-                        cell.put("timingAdvance", if (Build.VERSION.SDK_INT >= 34) sig.timingAdvanceMicros else -1L)
-                    }
+                    if (cell.has("type")) cells.put(cell)
                 }
-                if (cell.length() > 0) cells.put(cell)
             }
         }
         json.put("cells", cells)
-        json.put("totalRxBytes", TrafficStats.getTotalRxBytes())
-        json.put("totalTxBytes", TrafficStats.getTotalTxBytes())
-        json.put("mobileRxBytes", TrafficStats.getMobileRxBytes())
         return json
     }
+
     private fun buildCellInfoText(): String {
-        val sb = StringBuilder("Данные о сетях (${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}):\n\n")
-        val hasPerm = ActivityCompat.checkSelfPermission(this, android.Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED ||
-                ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!hasPerm) {
-            return "Нет разрешений READ_PHONE_STATE / ACCESS_COARSE_LOCATION"
+        val sb = StringBuilder("СПИСОК ВЫШЕК:\n")
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return "Нет разрешения на геолокацию"
         }
-        val cellInfoList = telephonyManager.allCellInfo ?: emptyList()
-        if (cellInfoList.isEmpty()) {
-            sb.append("Нет доступных вышек\n")
-        } else {
-            cellInfoList.forEachIndexed { index, info ->
-                sb.append("Вышка #${index + 1}:\n")
-                when (info) {
-                    is CellInfoLte -> {
-                        val id = info.cellIdentity as CellIdentityLte
-                        val sig = info.cellSignalStrength as CellSignalStrengthLte
-                        sb.append("  Тип: LTE\n")
-                        sb.append("  PCI: ${id.pci}, TAC: ${id.tac}, CI: ${id.ci}\n")
-                        sb.append("  EARFCN: ${id.earfcn}, MCC: ${getMccString(id)}, MNC: ${getMncString(id)}\n")
-                        sb.append("  RSRP: ${sig.rsrp} dBm, RSRQ: ${sig.rsrq}, TA: ${sig.timingAdvance}\n")
-                    }
-                    is CellInfoGsm -> {
-                        val id = info.cellIdentity as CellIdentityGsm
-                        val sig = info.cellSignalStrength as CellSignalStrengthGsm
-                        sb.append("  Тип: GSM\n")
-                        sb.append("  LAC: ${id.lac}, CID: ${id.cid}, ARFCN: ${id.arfcn}, BSIC: ${id.bsic}\n")
-                        sb.append("  MCC: ${getMccString(id)}, MNC: ${getMncString(id)}\n")
-                        sb.append("  Уровень: ${sig.dbm} dBm\n")
-                    }
-                    is CellInfoNr -> if (Build.VERSION.SDK_INT >= 29) {
-                        val id = info.cellIdentity as CellIdentityNr
-                        val sig = info.cellSignalStrength as CellSignalStrengthNr
-                        sb.append("  Тип: 5G NR\n")
-                        sb.append("  PCI: ${id.pci}, TAC: ${id.tac}, NCI: ${id.nci}\n")
-                        sb.append("  NR-ARFCN: ${id.nrarfcn}\n")
-                        sb.append("  SS-RSRP: ${sig.ssRsrp}, SS-RSRQ: ${sig.ssRsrq}, SS-SINR: ${sig.ssSinr}\n")
-                    }
-                }
-                sb.append("  Registered: ${info.isRegistered}\n\n")
+        val list = telephonyManager.allCellInfo
+        if (list.isNullOrEmpty()) return "Вышки не найдены"
+
+        list.forEachIndexed { i, info ->
+            val reg = if (info.isRegistered) "[АКТИВ]" else "[СОСЕД]"
+            sb.append("${i+1}. $reg ")
+            when (info) {
+                is CellInfoLte -> sb.append("LTE | PCI: ${info.cellIdentity.pci} | RSRP: ${info.cellSignalStrength.rsrp}dBm")
+                is CellInfoNr -> sb.append("5G NR | PCI: ${(info.cellIdentity as CellIdentityNr).pci} | RSRP: ${(info.cellSignalStrength as CellSignalStrengthNr).ssRsrp}")
+                is CellInfoGsm -> sb.append("GSM | CID: ${info.cellIdentity.cid} | Signal: ${info.cellSignalStrength.dbm}")
+                else -> sb.append("Другой тип сети")
             }
+            sb.append("\n")
         }
         return sb.toString()
     }
-    private fun getMccString(identity: CellIdentity): String {
-        return when (identity) {
-            is CellIdentityLte -> if (Build.VERSION.SDK_INT >= 28) identity.mccString ?: "unknown" else identity.mcc.toString()
-            is CellIdentityGsm -> if (Build.VERSION.SDK_INT >= 28) identity.mccString ?: "unknown" else identity.mcc.toString()
-            is CellIdentityNr -> if (Build.VERSION.SDK_INT >= 29) identity.mccString ?: "unknown" else "unknown"
-            else -> "unknown"
-        }
-    }
-    private fun getMncString(identity: CellIdentity): String {
-        return when (identity) {
-            is CellIdentityLte -> if (Build.VERSION.SDK_INT >= 28) identity.mncString ?: "unknown" else identity.mnc.toString()
-            is CellIdentityGsm -> if (Build.VERSION.SDK_INT >= 28) identity.mncString ?: "unknown" else identity.mnc.toString()
-            is CellIdentityNr -> if (Build.VERSION.SDK_INT >= 29) identity.mncString ?: "unknown" else "unknown"
-            else -> "unknown"
-        }
-    }
-    private fun getBand(identity: CellIdentity): Int {
-        if (Build.VERSION.SDK_INT < 30) return -1
-        val bands = when (identity) {
-            is CellIdentityLte -> identity.bands
-            is CellIdentityNr -> identity.bands
-            else -> null
-        }
-        return bands?.firstOrNull() ?: -1
-    }
-    private fun sendToBackend(json: JSONObject) {
+
+    private fun sendToBackend(payload: String) {
         scope.launch {
-            var socket: ZMQ.Socket? = null
             try {
-                socket = zmqContext.createSocket(SocketType.REQ)
-                socket.receiveTimeOut = 3000
-                socket.sendTimeOut = 3000
-                val address = "tcp://$SERVER_IP:$SERVER_PORT"
-                socket.connect(address)
-                val jsonPayload = json.toString()
-                val isSent = socket.send(jsonPayload.toByteArray(ZMQ.CHARSET), 0)
-                if (isSent) {
-                    val response = socket.recvStr(0)
-                    Log.d(TAG, "Отправлено на сервер: ${jsonPayload.take(200)}... Ответ: $response")
-                } else {
-                    Log.e(TAG, "Ошибка отправки")
+                if (zmqSocket == null || lastConnectedIp != currentServerIp || lastConnectedPort != currentServerPort) {
+                    Log.w(TAG, "⚠️ Socket not ready, reinitializing...")
+                    initZmqSocket()
+                    delay(200)
+                }
+
+                zmqSocket?.let { sock ->
+                    Log.d(TAG, "📤 Sending ${payload.length} bytes to $currentServerIp:$currentServerPort")
+                    sock.send(payload.toByteArray(ZMQ.CHARSET), 0)
+                    Log.d(TAG, "✅ Packet sent successfully")
+                } ?: run {
+                    Log.e(TAG, "❌ ZMQ socket is null!")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Ошибка ZMQ: ${e.message}")
-            } finally {
-                socket?.close()
+                Log.e(TAG, "❌ ZMQ send error: ${e.message}")
+                e.printStackTrace()
+                zmqSocket?.close()
+                zmqSocket = null
             }
         }
     }
-    private fun writeFullJsonToLocal(json: JSONObject) {
-        val jsonString = json.toString() + "\n"
+
+    private fun writeToPhoneLog(line: String) {
         try {
-            val file = File(filesDir, "location_history.json")
-            FileOutputStream(file, true).use { it.write(jsonString.toByteArray()) }
-            Log.d(TAG, "Записано в location_history.json")
+            FileOutputStream(File(filesDir, "location_history.json"), true).use {
+                it.write((line + "\n").toByteArray())
+            }
+            Log.d(TAG, "💾 Written to local log")
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка записи в файл: ${e.message}")
+            Log.e(TAG, "❌ File write error: ${e.message}")
         }
     }
-    private fun sendBroadcastUpdate(cellInfoText: String) {
-        val intent = Intent(BROADCAST_ACTION)
-        intent.putExtra("Status", "Сервис работает (обновление: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())})")
-        intent.putExtra("CellInfo", cellInfoText)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+
+    private fun sendBroadcastUpdate(txt: String, json: String) {
+        LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(BROADCAST_ACTION).apply {
+            putExtra("Status", "Обновлено: ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}")
+            putExtra("CellInfo", txt)
+            putExtra("LastJson", json)
+        })
     }
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
-    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onBind(p0: Intent?): IBinder? = null
+
     override fun onDestroy() {
+        Log.d(TAG, "🛑 Service onDestroy()")
         periodicRunnable?.let { handler.removeCallbacks(it) }
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+
+        try {
+            zmqSocket?.close()
+            zmqContext.close()
+            Log.d(TAG, "✅ ZMQ resources closed")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing ZMQ: ${e.message}")
+        }
+
         scope.cancel()
-        zmqContext.destroy()
         super.onDestroy()
     }
 }
